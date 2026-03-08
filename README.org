@@ -1,0 +1,5 @@
+* Kindle Wi-Fi Clock
+
+[[file:demo.png]]
+
+Idea and code from [[https://www.mariannefeng.com/portfolio/kindle][here]].

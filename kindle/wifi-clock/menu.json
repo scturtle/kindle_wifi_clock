@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "name": "scturtle",
+      "priority": 0,
+      "items": [
+        {
+          "name": "Start Wi-Fi Clock",
+          "priority": 1,
+          "action": "bin/start.sh",
+          "exitmenu": false
+        }
+      ]
+    }
+  ]
+}
