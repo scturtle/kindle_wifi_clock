@@ -53,10 +53,10 @@ async fn get_image(
     let height = 600;
     let mut image = GrayImage::from_pixel(width, height, Luma([255]));
 
-    let scale = PxScale::from(320.0);
-    let (_, text_h) = text_size(scale, &state.font, time_str);
-    let x = -15;
-    let y = (height as i32 - text_h as i32) / 2 - 20;
+    let scale = PxScale::from(360.0);
+    let (text_w, text_h) = text_size(scale, &state.font, time_str);
+    let x = (width as i32 - text_w as i32) / 2 - 10;
+    let y = (height as i32 - text_h as i32) / 2;
     draw_text_mut(&mut image, Luma([0]), x, y, scale, &state.font, time_str);
     // image.save("time.png")?;
 

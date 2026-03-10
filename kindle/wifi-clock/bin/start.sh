@@ -8,12 +8,15 @@ PID_FILE="${DIR}/.pid"
 URL="https://time.scturtle.me"
 
 refresh_screen() {
-  curl -k "$URL/image" -o "$DIR/screen.png"
-  eips -c
-  eips -c
-  eips -g "$DIR/screen.png" -x 0 -y 10 -w du0
-  # Draw battery at top (eips can't print %, so we strip it from gasgauge-info -c)
-  eips 0 0 "                                                $(gasgauge-info -c 2>/dev/null | sed 's/%//g' || echo '?')"
+  BAT=$(gasgauge-info -c 2>/dev/null | sed 's/%//g' || echo '?')
+  if curl -k --connect-timeout 5 -m 15 "$URL/image" -o "$DIR/screen.png"; then
+    eips -c
+    eips -c
+    eips -g "$DIR/screen.png" -x 0 -y 10 -w du0
+    eips 0 0 "                                               ${BAT}"
+  else
+    eips 0 0 "Sync Failed                                    ${BAT}"
+  fi
 }
 
 # Keep the screen on (no screensaver) while the dashboard is running
@@ -32,23 +35,15 @@ trap - TERM
   while true; do
     refresh_screen
     
-    # 1. Get the current second from the URL (silent mode, ignore cert errors)
-    SEC=$(curl -sk "$URL/second")
+    # Get the current second from the URL (silent mode, ignore cert errors)
+    SEC=$(curl -sk "$URL/second" --connect-timeout 5 --max-time 15)
 
     # Validate that SEC is a number; fallback to 0 if it's not
-    if ! [ "$SEC" -eq "$SEC" ] 2>/dev/null; then
+    if ! echo "$SEC" | grep -Eq '^[0-5]?[0-9]$'; then
       SEC=0
     fi
 
-    # 2. Calculate sleep time (60 - sec)
-    SLEEP_TIME=$((60 - SEC))
-
-    # Ensure SLEEP_TIME is sensible (between 1 and 60)
-    if [ "$SLEEP_TIME" -le 0 ]; then
-      SLEEP_TIME=60
-    fi
-
-    sleep "$SLEEP_TIME"
+    sleep "$((60 - SEC))"
   done
 ) &
 
