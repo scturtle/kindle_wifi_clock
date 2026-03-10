@@ -39,9 +39,13 @@ trap - TERM
     SEC=$(curl -sk "$URL/second" --connect-timeout 5 --max-time 15)
 
     # Validate that SEC is a number; fallback to 0 if it's not
-    if ! echo "$SEC" | grep -Eq '^[0-5]?[0-9]$'; then
-      SEC=0
-    fi
+    case "$SEC" in
+      [0-9] | [0-5][0-9])
+        ;;
+      *)
+        SEC=0
+        ;;
+    esac
 
     sleep "$((60 - SEC))"
   done
