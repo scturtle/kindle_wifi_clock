@@ -16,6 +16,12 @@ refresh_screen() {
     eips 0 0 "                                               ${BAT}"
   else
     eips 0 0 "Sync Failed                                    ${BAT}"
+    if [ "$(lipc-get-prop com.lab126.wifid cmState)" != "CONNECTED" ]; then
+      lipc-set-prop com.lab126.cmd wirelessEnable 0
+      sleep 30
+      lipc-set-prop com.lab126.cmd wirelessEnable 1
+      sleep 30
+    fi
   fi
 }
 
