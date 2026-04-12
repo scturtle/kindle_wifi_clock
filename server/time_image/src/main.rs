@@ -15,7 +15,7 @@ struct AppState {
 }
 
 async fn fetch_time_api() -> Result<String, (StatusCode, String)> {
-    let url = "https://timeapi.io/api/Time/current/zone?timeZone=Asia/Shanghai";
+    let url = "https://time.now/developer/api/timezone/Asia/Shanghai";
     reqwest::get(url)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -27,12 +27,15 @@ async fn fetch_time_api() -> Result<String, (StatusCode, String)> {
 async fn get_second() -> Result<String, (StatusCode, String)> {
     let response_text = fetch_time_api().await?;
     let second_str = response_text
-        .split(r#""seconds":"#)
+        .split(r#""datetime":""#)
         .nth(1)
         .unwrap_or("")
-        .split(',')
-        .next()
+        .split('T')
+        .nth(1)
+        .unwrap_or("")
+        .get(6..8)
         .unwrap_or("00");
+
     Ok(second_str.to_string())
 }
 
@@ -40,13 +43,14 @@ async fn get_image(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let response_text = fetch_time_api().await?;
-
     let time_str = response_text
-        .split(r#""time":""#)
+        .split(r#""datetime":""#)
         .nth(1)
         .unwrap_or("")
-        .split('"')
-        .next()
+        .split('T')
+        .nth(1)
+        .unwrap_or("")
+        .get(0..5)
         .unwrap_or("00:00");
 
     let width = 800;
