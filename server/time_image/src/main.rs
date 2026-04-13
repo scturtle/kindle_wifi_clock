@@ -34,9 +34,14 @@ async fn get_second() -> Result<String, (StatusCode, String)> {
         .nth(1)
         .unwrap_or("")
         .get(6..8)
-        .unwrap_or("00");
+        .unwrap_or("0");
 
-    Ok(second_str.to_string())
+    let second = second_str.trim_start_matches('0');
+    Ok(if second.is_empty() {
+        "0".to_string()
+    } else {
+        second.to_string()
+    })
 }
 
 async fn get_image(
