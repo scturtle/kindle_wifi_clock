@@ -1,8 +1,9 @@
 use ab_glyph::{FontVec, PxScale};
 use axum::{
+    body::Body,
     extract::State,
-    http::{header, HeaderMap, StatusCode},
-    response::IntoResponse,
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
     routing::get,
     Router,
 };
@@ -16,36 +17,40 @@ struct AppState {
     font: FontVec,
 }
 
-/// Fetches time from NTP server using rsntp and converts it to Asia/Shanghai DateTime
-async fn get_shanghai_time() -> Result<chrono::DateTime<chrono_tz::Tz>, (StatusCode, String)> {
+struct AppError(StatusCode, String);
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (self.0, self.1).into_response()
+    }
+}
+
+impl AppError {
+    fn internal(msg: impl std::fmt::Display) -> Self {
+        Self(StatusCode::INTERNAL_SERVER_ERROR, msg.to_string())
+    }
+}
+
+async fn get_shanghai_time() -> Result<chrono::DateTime<chrono_tz::Tz>, AppError> {
     let result: SynchronizationResult = AsyncSntpClient::new()
         .synchronize("162.159.200.123:123")
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("NTP Error: {}", e),
-            )
-        })?;
+        .map_err(|e| AppError::internal(format!("NTP Error: {}", e)))?;
 
-    let utc_datetime = result.datetime().into_chrono_datetime().map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Invalid NTP date: {}", e),
-        )
-    })?;
+    let utc_datetime = result
+        .datetime()
+        .into_chrono_datetime()
+        .map_err(|e| AppError::internal(format!("Invalid NTP date: {}", e)))?;
 
     Ok(utc_datetime.with_timezone(&chrono_tz::Asia::Shanghai))
 }
 
-async fn get_second() -> Result<impl IntoResponse, (StatusCode, String)> {
+async fn get_second() -> Result<impl IntoResponse, AppError> {
     let now = get_shanghai_time().await?;
     Ok(now.second().to_string())
 }
 
-async fn get_image(
-    State(state): State<Arc<AppState>>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+async fn get_image(State(state): State<Arc<AppState>>) -> Result<impl IntoResponse, AppError> {
     let now = get_shanghai_time().await?;
     let time_str = format!("{:02}:{:02}", now.hour(), now.minute());
 
@@ -64,16 +69,13 @@ async fn get_image(
     let mut buffer = Cursor::new(Vec::new());
     imageops::rotate90(&image)
         .write_to(&mut buffer, ImageFormat::Png)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to encode image: {}", e),
-            )
-        })?;
+        .map_err(|e| AppError::internal(format!("Failed to encode image: {}", e)))?;
 
-    let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, "image/png".parse().unwrap());
-    Ok((headers, buffer.into_inner()))
+    Response::builder()
+        .header(header::CONTENT_TYPE, "image/png")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(buffer.into_inner()))
+        .map_err(|e| AppError::internal(format!("Failed to build response: {}", e)))
 }
 
 #[tokio::main]
