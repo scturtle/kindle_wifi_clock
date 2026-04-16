@@ -6,68 +6,60 @@ use axum::{
     routing::get,
     Router,
 };
+use chrono::Timelike;
 use image::{imageops, GrayImage, ImageFormat, Luma};
 use imageproc::drawing::{draw_text_mut, text_size};
+use rsntp::{AsyncSntpClient, SynchronizationResult};
 use std::{io::Cursor, sync::Arc};
 
 struct AppState {
     font: FontVec,
 }
 
-async fn fetch_time_api() -> Result<String, (StatusCode, String)> {
-    let url = "https://time.now/developer/api/timezone/Asia/Shanghai";
-    reqwest::get(url)
+/// Fetches time from NTP server using rsntp and converts it to Asia/Shanghai DateTime
+async fn get_shanghai_time() -> Result<chrono::DateTime<chrono_tz::Tz>, (StatusCode, String)> {
+    let result: SynchronizationResult = AsyncSntpClient::new()
+        .synchronize("162.159.200.123:123")
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .text()
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("NTP Error: {}", e),
+            )
+        })?;
+
+    let utc_datetime = result.datetime().into_chrono_datetime().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Invalid NTP date: {}", e),
+        )
+    })?;
+
+    Ok(utc_datetime.with_timezone(&chrono_tz::Asia::Shanghai))
 }
 
-async fn get_second() -> Result<String, (StatusCode, String)> {
-    let response_text = fetch_time_api().await?;
-    let second_str = response_text
-        .split(r#""datetime":""#)
-        .nth(1)
-        .unwrap_or("")
-        .split('T')
-        .nth(1)
-        .unwrap_or("")
-        .get(6..8)
-        .unwrap_or("0");
-
-    let second = second_str.trim_start_matches('0');
-    Ok(if second.is_empty() {
-        "0".to_string()
-    } else {
-        second.to_string()
-    })
+async fn get_second() -> Result<impl IntoResponse, (StatusCode, String)> {
+    let now = get_shanghai_time().await?;
+    Ok(now.second().to_string())
 }
 
 async fn get_image(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let response_text = fetch_time_api().await?;
-    let time_str = response_text
-        .split(r#""datetime":""#)
-        .nth(1)
-        .unwrap_or("")
-        .split('T')
-        .nth(1)
-        .unwrap_or("")
-        .get(0..5)
-        .unwrap_or("00:00");
+    let now = get_shanghai_time().await?;
+    let time_str = format!("{:02}:{:02}", now.hour(), now.minute());
 
     let width = 800;
     let height = 600;
     let mut image = GrayImage::from_pixel(width, height, Luma([255]));
 
     let scale = PxScale::from(360.0);
-    let (text_w, text_h) = text_size(scale, &state.font, time_str);
+    let (text_w, text_h) = text_size(scale, &state.font, &time_str);
+
     let x = (width as i32 - text_w as i32) / 2 - 10;
     let y = (height as i32 - text_h as i32) / 2;
-    draw_text_mut(&mut image, Luma([0]), x, y, scale, &state.font, time_str);
-    // image.save("time.png")?;
+
+    draw_text_mut(&mut image, Luma([0]), x, y, scale, &state.font, &time_str);
 
     let mut buffer = Cursor::new(Vec::new());
     imageops::rotate90(&image)
@@ -88,6 +80,7 @@ async fn get_image(
 async fn main() {
     let font_data = std::fs::read("font.ttf").expect("font.ttf not found");
     let font = FontVec::try_from_vec(font_data).expect("Invalid font");
+
     let state = Arc::new(AppState { font });
 
     let app = Router::new()
@@ -96,5 +89,6 @@ async fn main() {
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8333").await.unwrap();
+    println!("Server running on http://0.0.0.0:8333");
     axum::serve(listener, app).await.unwrap();
 }
